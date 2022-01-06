@@ -3,6 +3,7 @@ import org.apache.kafka.common.serialization.StringSerializer
 
 import java.util.Properties
 
+/* Publisher */
 object MessagePublisher {
 
   def main(args: Array[String]): Unit = {
