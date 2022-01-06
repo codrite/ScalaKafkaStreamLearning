@@ -1,5 +1,5 @@
-import org.apache.kafka.clients.producer.{Callback, KafkaProducer, ProducerConfig, ProducerRecord, RecordMetadata}
-import org.apache.kafka.common.serialization.{IntegerSerializer, StringSerializer}
+import org.apache.kafka.clients.producer._
+import org.apache.kafka.common.serialization.StringSerializer
 
 import java.util.Properties
 
@@ -18,7 +18,7 @@ object MessagePublisher {
 
   object MessageCallback extends Callback {
     override def onCompletion(metadata: RecordMetadata, exception: Exception): Unit = {
-      println(s"Publishing completed : $metadata.topic()")
+      println(s"Publishing completed : ${metadata.topic()}, ${metadata.offset()}")
     }
   }
 
