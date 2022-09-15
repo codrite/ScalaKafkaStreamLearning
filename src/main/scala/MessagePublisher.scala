@@ -9,9 +9,9 @@ object MessagePublisher {
   def main(args: Array[String]): Unit = {
     val publisherA = new KafkaProducer[String, String](config(classOf[StringSerializer]))
 
-    val msgs = List("arnab", "saurabh", "aaliya", "chiya", "tina", "arpita", "shikha", "dilip")
+    val msgs = List("tim1", "robert1", "nancy1", "bill", "warren", "dublin", "ireland", "brazil113")
 
-    msgs.map(n => new ProducerRecord("names", n, n))
+    msgs.map(n => new ProducerRecord("kv", n, n+":"+System.currentTimeMillis()))
         .map(r => publisherA.send(r, MessageCallback))
 
     println("Done...")

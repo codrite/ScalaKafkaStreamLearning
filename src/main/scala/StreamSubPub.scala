@@ -1,6 +1,8 @@
 import org.apache.kafka.common.serialization.Serdes
-import org.apache.kafka.streams.kstream.{Branched, Named, Predicate, Produced}
-import org.apache.kafka.streams.{KafkaStreams, KeyValue, StreamsBuilder, StreamsConfig}
+import org.apache.kafka.streams.kstream._
+import org.apache.kafka.streams.state.{KeyValueStore, QueryableStoreType, QueryableStoreTypes, ReadOnlyKeyValueStore, Stores}
+import org.apache.kafka.streams.state.QueryableStoreTypes.KeyValueStoreType
+import org.apache.kafka.streams._
 
 import java.time.Duration
 import java.util.Properties
@@ -30,6 +32,10 @@ object StreamSubPub {
   }
 
   def main(args: Array[String]): Unit = {
+    val joinedKTable = buildKTableAndJoin("WhenMoreThan5", "WhenLessThanEqualTo5")
+    println(s"Querable State Store : ${joinedKTable.queryableStoreName()}")
+    joinedKTable.mapValues(value => println(s"Joined Table : ${value} <=> ${value.length}"))
+
     nameStreamProcessing()
     nameLengthStreamProcessing("duplicateNames")
     nameLengthStreamProcessing("WhenMoreThan5")
@@ -40,22 +46,24 @@ object StreamSubPub {
     val streamBuilder: StreamsBuilder = new StreamsBuilder
     val streamHandler = streamBuilder.stream[String, String]("names")
 
-    val greaterThan5 : Predicate[String, String] = (x: String, y: String) => (x.length > 5)
-    val LessThanOrEqualTo5 : Predicate[String, String] = (x: String, y: String) => (x.length <= 5)
+    val greaterThan5 : Predicate[String, String] = (x: String, y: String) => (x.length > 4)
+    val LessThanOrEqualTo5 : Predicate[String, String] = (x: String, y: String) => (x.length <= 4)
 
     val branchedGreaterThan5 = streamHandler.split(Named.as("When"))
                                             .branch(greaterThan5, Branched.as("MoreThan5"))
                                             .branch(LessThanOrEqualTo5, Branched.as("LessThanOrEqualTo5"))
                                             .noDefaultBranch()
-                                                                  //.branch((k, v) => v.length < 5, Branched.as("lessThan5"))
-    println("----------")
+
+    // Inspect the stream post branching
     branchedGreaterThan5.entrySet().forEach(es => println(s"${es.getValue.foreach((k,v) => println(s"${es.getKey} = $v"))}"))
-    branchedGreaterThan5.entrySet().forEach(es => es.getValue.map((k, v) => new KeyValue[String, Integer](k, v.length)).to(es.getKey, Produced.`with`(Serdes.String(), Serdes.Integer())))
-    println("----------")
+
+    branchedGreaterThan5.entrySet().forEach(es => es.getValue.map((k, v) => new KeyValue[String, String](k, v)).to(es.getKey, Produced.`with`(Serdes.String(), Serdes.String())))
 
     streamHandler.map((key, value) => new KeyValue[String, Integer](key, value.length)).to("duplicateNames", Produced.`with`(Serdes.String(), Serdes.Integer()))
 
-    val nameStreams = new KafkaStreams(streamBuilder.build(), propNames)
+    val topology = streamBuilder.build()
+    println(topology)
+    val nameStreams = new KafkaStreams(topology, propNames)
     nameStreams.start()
 
     sys.runtime.addShutdownHook(
@@ -66,11 +74,38 @@ object StreamSubPub {
     )
   }
 
+  def buildKTableAndJoin(firstTopic: String, secondTopic: String) : KTable[String, String] = {
+    val firstTopicKTable : KTable[String, String] = buildKTable(firstTopic)
+    val secondTopicKTable : KTable[String, String] = buildKTable(secondTopic)
+
+    val valueJoiner : ValueJoiner[String, String, String] = (left, right) => {
+      println(s"{$left} == {$right}")
+      left+right
+    }
+
+    val stateStoreInMemory = Stores.keyValueStoreBuilder(Stores.inMemoryKeyValueStore("nameStore"), Serdes.String(), Serdes.String()).build()
+
+    val keyValueStore = QueryableStoreTypes.keyValueStore[String, String]()
+    val streamBuilder = new StreamsBuilder()
+    val streamHandler = streamBuilder.stream(firstTopic)
+    val stateStore : ReadOnlyKeyValueStore[String, String] = new KafkaStreams(streamBuilder.build(), propNames).store(StoreQueryParameters.fromNameAndType("nameStore", QueryableStoreTypes.keyValueStore[String, String]()))
+    println(stateStore.get("nancy"))
+    println(stateStore.get("robert"))
+
+    //println(s"First Topic KTable : ${firstTopicKTable.queryableStoreName()}")
+    //println(s"First Topic KTable : ${secondTopicKTable.queryableStoreName()}")
+
+    //val stateStore: Materialized[String, String, InMemoryKeyValueStore] = Materialized.as("OuterJoin")
+    firstTopicKTable.join(secondTopicKTable, valueJoiner)
+  }
+
+  def buildKTable(topic: String) : KTable[String , String] =  new StreamsBuilder().stream(topic).toTable(Named.as("Table" + topic), Materialized.as("Table" + topic))
+
   def nameLengthStreamProcessing(topicName: String) : Unit = {
     val streamBuilder: StreamsBuilder = new StreamsBuilder
     val streamHandler = streamBuilder.stream[String, Integer](topicName)
 
-    streamHandler.foreach((key, value) => println(s"$topicName > $key --- $value"))
+    //streamHandler.foreach((key, value) => println(s"$topicName > $key --- $value"))
 
     val nameStreams = new KafkaStreams(streamBuilder.build(), propDuplicate)
     nameStreams.start()

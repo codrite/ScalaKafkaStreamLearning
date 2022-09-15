@@ -1,0 +1,13 @@
+Topologies:
+   Sub-topology: 0
+    Source: SOURCE_TOPIC (topics: [source])
+      --> none
+
+  Sub-topology: 1
+    Source: KV_STATE (topics: [kv])
+      --> CONCATENATE_KEY_VALUE
+    Processor: CONCATENATE_KEY_VALUE (stores: [TEST])
+      --> TARGET_TOPIC
+      <-- KV_STATE
+    Sink: TARGET_TOPIC (topic: target)
+      <-- CONCATENATE_KEY_VALUE
